@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Performance</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    .chart-container {
+      width: 800px;
+      height: 600px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    canvas {
+      width: 800px !important;
+      height: 600px !important;
+    }
+  </style>
+</head>
+<body class="bg-gradient-to-br from-teal-100 to-blue-200 min-h-screen flex flex-col items-center p-6 space-y-8">
+
+  <h1 class="text-4xl font-bold text-blue-800">Registros</h1>
+
+  <!-- Gráfico de Peso -->
+  <div class="bg-white p-6 rounded-2xl shadow-xl w-full max-w-6xl flex justify-center">
+    <div class="chart-container">
+      <h2 class="text-2xl font-bold text-blue-700 mb-4">Peso</h2>
+      <canvas id="chartPeso" width="800" height="600"></canvas>
+    </div>
+  </div>
+
+  <!-- Gráfico de IMC -->
+  <div class="bg-white p-6 rounded-2xl shadow-xl w-full max-w-6xl flex justify-center">
+    <div class="chart-container">
+      <h2 class="text-2xl font-bold text-blue-700 mb-4">Índice de Masa Corporal</h2>
+      <canvas id="chartIMC" width="800" height="600"></canvas>
+    </div>
+  </div>
+
+  <!-- Formulario -->
+  <div class="bg-white p-6 rounded-2xl shadow-xl w-full max-w-lg">
+    <form id="form" class="flex flex-col gap-4 mb-6">
+      <input type="datetime-local" id="date" class="border p-2 rounded-xl" required>
+      <input type="text" id="weight" placeholder="Peso (kg)" class="border p-2 rounded-xl" required>
+
+      <div class="flex items-center gap-2">
+        <input type="text" id="height" placeholder="Altura (cm)" class="border p-2 rounded-xl flex-1">
+        <button type="button" id="update-height" class="bg-blue-400 hover:bg-blue-500 text-white font-bold p-2 rounded-xl">Actualizar altura</button>
+        <button type="button" id="delete-height" class="bg-red-400 hover:bg-red-500 text-white font-bold p-2 rounded-xl">Borrar altura</button>
+      </div>
+
+      <button type="submit" class="bg-teal-400 hover:bg-teal-500 text-white font-bold p-2 rounded-xl">Añadir Registro</button>
+    </form>
+  </div>
+
+  <!-- Tabla -->
+  <div class="bg-white p-6 rounded-2xl shadow-xl w-full max-w-6xl">
+    <table class="table-auto w-full text-center">
+      <thead class="text-gray-700">
+        <tr>
+          <th class="p-2">Fecha</th>
+          <th class="p-2">Peso (kg)</th>
+          <th class="p-2">Altura (cm)</th>
+          <th class="p-2">IMC</th>
+          <th class="p-2">Acciones</th>
+        </tr>
+      </thead>
+      <tbody id="table-body" class="text-blue-700">
+        <!-- Registros se insertan aquí -->
+      </tbody>
+    </table>
+  </div>
+
+  <script>
+    const form = document.getElementById('form');
+    const dateInput = document.getElementById('date');
+    const weightInput = document.getElementById('weight');
+    const heightInput = document.getElementById('height');
+    const tableBody = document.getElementById('table-body');
+    const updateHeightBtn = document.getElementById('update-height');
+    const deleteHeightBtn = document.getElementById('delete-height');
+    const ctxPeso = document.getElementById('chartPeso').getContext('2d');
+    const ctxIMC = document.getElementById('chartIMC').getContext('2d');
+
+    let registros = [];
+    let alturaGuardada = null; // en centímetros
+
+    let chartPeso = new Chart(ctxPeso, {
+      type: 'line',
+      data: {
+        labels: [],
+        datasets: [{
+          label: 'Peso (kg)',
+          data: [],
+          borderColor: 'rgb(13, 148, 136)',
+          backgroundColor: 'rgba(13, 148, 136, 0.2)',
+          tension: 0.3,
+          fill: true,
+          pointRadius: 5,
+          pointHoverRadius: 8,
+        }]
+      },
+      options: {
+        responsive: false,
+        scales: {
+          x: { title: { display: true, text: 'Fecha', color: '#0f172a' }, ticks: { color: '#0f172a' }},
+          y: { title: { display: true, text: 'Peso (kg)', color: '#0f172a' }, ticks: { color: '#0f172a' }}
+        },
+        plugins: { legend: { labels: { color: '#0f172a' } } }
+      }
+    });
+
+    let chartIMC = new Chart(ctxIMC, {
+      type: 'line',
+      data: {
+        labels: [],
+        datasets: [{
+          label: 'IMC',
+          data: [],
+          borderColor: 'rgb(59, 130, 246)',
+          backgroundColor: 'rgba(59, 130, 246, 0.2)',
+          tension: 0.3,
+          fill: true,
+          pointRadius: 5,
+          pointHoverRadius: 8,
+        }]
+      },
+      options: {
+        responsive: false,
+        scales: {
+          x: { title: { display: true, text: 'Fecha', color: '#0f172a' }, ticks: { color: '#0f172a' }},
+          y: { title: { display: true, text: 'IMC', color: '#0f172a' }, ticks: { color: '#0f172a' }}
+        },
+        plugins: { legend: { labels: { color: '#0f172a' } } }
+      }
+    });
+
+    function cargarDatos() {
+      const cookieRegistros = document.cookie.split('; ').find(row => row.startsWith('registros='));
+      const cookieAltura = document.cookie.split('; ').find(row => row.startsWith('altura='));
+      if (cookieRegistros) {
+        registros = JSON.parse(decodeURIComponent(cookieRegistros.split('=')[1]));
+      }
+      if (cookieAltura) {
+        alturaGuardada = parseFloat(decodeURIComponent(cookieAltura.split('=')[1]));
+        if (!isNaN(alturaGuardada)) {
+          heightInput.value = alturaGuardada.toFixed(0);
+        }
+      }
+      actualizarVista();
+    }
+
+    function guardarDatos() {
+      document.cookie = `registros=${encodeURIComponent(JSON.stringify(registros))}; path=/; max-age=31536000`;
+      if (alturaGuardada !== null) {
+        document.cookie = `altura=${encodeURIComponent(alturaGuardada)}; path=/; max-age=31536000`;
+      }
+    }
+
+    function actualizarVista() {
+      tableBody.innerHTML = '';
+      registros.sort((a, b) => new Date(a.fecha) - new Date(b.fecha));
+      registros.forEach((registro, index) => {
+        const alturaMetros = alturaGuardada ? alturaGuardada / 100 : null;
+        const imc = alturaMetros ? registro.peso / (alturaMetros * alturaMetros) : 0;
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td class="p-2">${registro.fecha.replace('T', ' ')}</td>
+          <td class="p-2">${registro.peso.toFixed(2)}</td>
+          <td class="p-2">${alturaGuardada ? alturaGuardada.toFixed(0) : ''}</td>
+          <td class="p-2">${alturaGuardada ? imc.toFixed(2) : ''}</td>
+          <td class="p-2">
+            <button onclick="eliminarRegistro(${index})" class="text-red-500 hover:underline">Eliminar</button>
+          </td>
+        `;
+        tableBody.appendChild(tr);
+      });
+
+      chartPeso.data.labels = registros.map(r => r.fecha.replace('T', ' '));
+      chartPeso.data.datasets[0].data = registros.map(r => r.peso);
+      chartPeso.update();
+
+      chartIMC.data.labels = registros.map(r => r.fecha.replace('T', ' '));
+      chartIMC.data.datasets[0].data = registros.map(r => {
+        const alturaMetros = alturaGuardada ? alturaGuardada / 100 : null;
+        return alturaMetros ? (r.peso / (alturaMetros * alturaMetros)).toFixed(2) : 0;
+      });
+      chartIMC.update();
+    }
+
+    function eliminarRegistro(index) {
+      registros.splice(index, 1);
+      guardarDatos();
+      actualizarVista();
+    }
+
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+
+      let fecha = dateInput.value;
+      let pesoTexto = weightInput.value.trim().replace(',', '.');
+      let alturaTexto = heightInput.value.trim().replace(',', '.');
+
+      let peso = parseFloat(pesoTexto);
+
+      if (!alturaGuardada && alturaTexto) {
+        alturaGuardada = parseFloat(alturaTexto);
+      }
+
+      if (isNaN(peso) || isNaN(alturaGuardada) || alturaGuardada <= 0) {
+        alert('Por favor ingresa un peso y una altura válidos.');
+        return;
+      }
+
+      const nuevoRegistro = {
+        fecha: fecha,
+        peso: parseFloat(peso.toFixed(2))
+      };
+
+      registros.push(nuevoRegistro);
+      guardarDatos();
+      actualizarVista();
+      form.reset();
+      setFechaActual();
+      heightInput.value = alturaGuardada.toFixed(0);
+    });
+
+    updateHeightBtn.addEventListener('click', () => {
+      let nuevaAlturaTexto = heightInput.value.trim().replace(',', '.');
+      let nuevaAltura = parseFloat(nuevaAlturaTexto);
+
+      if (isNaN(nuevaAltura) || nuevaAltura <= 0) {
+        alert('Por favor ingresa una altura válida.');
+        return;
+      }
+
+      alturaGuardada = nuevaAltura;
+      guardarDatos();
+      actualizarVista();
+      alert('Altura actualizada correctamente.');
+    });
+
+    deleteHeightBtn.addEventListener('click', () => {
+      if (confirm('¿Seguro que quieres borrar la altura guardada?')) {
+        alturaGuardada = null;
+        document.cookie = `altura=; path=/; max-age=0`;
+        heightInput.value = '';
+        guardarDatos();
+        actualizarVista();
+        alert('Altura borrada.');
+      }
+    });
+
+    function setFechaActual() {
+      const ahora = new Date();
+      const fechaFormateada = ahora.toISOString().slice(0,16);
+      dateInput.value = fechaFormateada;
+    }
+
+    cargarDatos();
+    setFechaActual();
+  </script>
+</body>
+</html>
